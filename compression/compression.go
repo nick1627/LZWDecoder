@@ -10,11 +10,11 @@ import (
 )
 
 type Dictionary struct {
-	length  int
+	length  uint16
 	entries [4096]string
 }
 
-func (dict *Dictionary) GetLength() int {
+func (dict *Dictionary) GetLength() uint16 {
 	return dict.length
 }
 
@@ -23,7 +23,7 @@ func (dict *Dictionary) Clear() {
 	dict.length = 256
 }
 
-func (dict *Dictionary) Initialise() {
+func (dict *Dictionary) initialise() {
 	for i := 0; i < 256; i++ {
 		dict.entries[i] = string(byte(i))
 	}
@@ -34,13 +34,12 @@ func (dict *Dictionary) AddEntry(newElement string) {
 	dict.length += 1
 }
 
-func (dict *Dictionary) GetEntry(index int) (string, error) {
+func (dict *Dictionary) GetEntry(index uint16) (string, error) {
 	if index >= dict.length {
 		return "", errors.New("index out of range")
 	} else {
 		return dict.entries[index], nil
 	}
-
 }
 
 func getCodes(byteList []byte) [2]uint16 {
@@ -93,11 +92,8 @@ func Decompress(encodedFile string) {
 	buffer := make([]byte, 3)
 
 	// Create and fill the dictionary
-	dictionary := make([]string, 256, 4096)
-	fmt.Println(len(dictionary))
-	for i := 0; i < 256; i++ {
-		dictionary[i] = string(byte(i))
-	}
+	var dictionary Dictionary
+	dictionary.initialise()
 
 	// Need to keep track of what was emitted previously
 	var lastEmitted string
@@ -107,7 +103,6 @@ func Decompress(encodedFile string) {
 		if errMsg != nil {
 			if errMsg != io.EOF {
 				fmt.Println(errMsg)
-				// fmt.Println("Number of bytes read: ", numRead)
 			}
 			// Error or end of file, so break loop
 			break
@@ -116,25 +111,22 @@ func Decompress(encodedFile string) {
 
 		// Extract the two codes from these three bytes
 		codes := getCodes(buffer)
-
 		for i := 0; i < 2; i++ {
 			// For every code, we apply the rules of the LZW decoding algorithm.
 			// See https://en.wikipedia.org/wiki/Lempel–Ziv–Welch
-			if codes[i] >= uint16(len(dictionary)) {
-				// The code is not in the dictionary
+			if codes[i] >= dictionary.GetLength() {
+				// The code is not in the dictionaryß
 				v := lastEmitted + lastEmitted[0:1]
-				dictionary = append(dictionary, v)
+				dictionary.AddEntry(v)
 				fmt.Print(v)
 			} else {
 				// The code is in the dictionary
-				w := dictionary[codes[i]]
+				w, _ := dictionary.GetEntry(codes[i])
 				fmt.Print(w)
 				newEntry := lastEmitted + w[0:1]
-				dictionary = append(dictionary, newEntry)
+				dictionary.AddEntry(newEntry)
 				lastEmitted = w
 			}
 		}
-
 	}
-
 }
