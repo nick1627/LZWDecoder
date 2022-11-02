@@ -11,7 +11,7 @@ import (
 
 type Dictionary struct {
 	length  uint16
-	entries [4096]string
+	entries [4096][]byte
 }
 
 func (dict *Dictionary) GetLength() uint16 {
@@ -24,13 +24,14 @@ func (dict *Dictionary) Clear() {
 }
 
 func (dict *Dictionary) Initialise() {
-	for i := 0; i < 256; i++ {
-		dict.entries[i] = string(byte(i))
+	var i uint16
+	for i = 0; i < 256; i++ {
+		dict.entries[i] = []byte{uint8(i)}
 	}
 	dict.length = 256
 }
 
-func (dict *Dictionary) AddEntry(newElement string) {
+func (dict *Dictionary) AddEntry(newElement []byte) {
 	if dict.length == 4096 {
 		dict.Clear()
 	}
@@ -38,9 +39,10 @@ func (dict *Dictionary) AddEntry(newElement string) {
 	dict.length += 1
 }
 
-func (dict *Dictionary) GetEntry(index uint16) (string, error) {
+func (dict *Dictionary) GetEntry(index uint16) ([]byte, error) {
 	if index >= dict.length {
-		return "", errors.New("index out of range")
+
+		return []byte{}, errors.New("index out of range of dictionary")
 	} else {
 		return dict.entries[index], nil
 	}
@@ -99,7 +101,7 @@ func Decompress(encodedFile string) {
 	dictionary.Initialise()
 
 	// Need to keep track of what was emitted previously
-	var lastEmitted string
+	var lastEmitted []byte
 	var endReached bool = false
 
 	// Loop until end of file
@@ -152,10 +154,11 @@ func Decompress(encodedFile string) {
 			// See https://en.wikipedia.org/wiki/Lempel–Ziv–Welch
 			if codes[i] >= dictionary.GetLength() {
 				// The code is not in the dictionary
-				v := lastEmitted + lastEmitted[0:1]
+				v := append(lastEmitted, lastEmitted[0])
 				dictionary.AddEntry(v)
+				fmt.Println(string(v))
 
-				_, errMsg = newFile.WriteString(v)
+				_, errMsg = newFile.Write(v)
 				if errMsg != nil {
 					fmt.Println(errMsg)
 				}
@@ -165,19 +168,19 @@ func Decompress(encodedFile string) {
 				// The code is in the dictionary
 				w, _ := dictionary.GetEntry(codes[i])
 
-				_, errMsg = newFile.WriteString(w)
+				_, errMsg = newFile.Write(w)
 				if errMsg != nil {
 					fmt.Println(errMsg)
 				}
 
-				if lastEmitted != "" {
-					newEntry := lastEmitted + w[0:1]
+				if len(lastEmitted) != 0 {
+					newEntry := append(lastEmitted, w[0])
 					dictionary.AddEntry(newEntry)
+					fmt.Println(string(newEntry))
 				}
 
 				lastEmitted = w
 			}
 		}
-
 	}
 }
