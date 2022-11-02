@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	c.Decompress("LzwInputData/01-hello.txt.z")
+	c.Decompress("LzwInputData/02-poem.txt.z")
 }
 
 // func learning() {

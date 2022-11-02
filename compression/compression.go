@@ -27,6 +27,7 @@ func (dict *Dictionary) initialise() {
 	for i := 0; i < 256; i++ {
 		dict.entries[i] = string(byte(i))
 	}
+	dict.length = 256
 }
 
 func (dict *Dictionary) AddEntry(newElement string) {
