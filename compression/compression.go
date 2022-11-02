@@ -1,6 +1,7 @@
 package compression
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -8,7 +9,41 @@ import (
 	// "bytes"
 )
 
-func getCodes(byteList []byte) (uint16, uint16) {
+type Dictionary struct {
+	length  int
+	entries [4096]string
+}
+
+func (dict *Dictionary) GetLength() int {
+	return dict.length
+}
+
+func (dict *Dictionary) Clear() {
+	// Just have to reset the length
+	dict.length = 256
+}
+
+func (dict *Dictionary) Initialise() {
+	for i := 0; i < 256; i++ {
+		dict.entries[i] = string(byte(i))
+	}
+}
+
+func (dict *Dictionary) AddEntry(newElement string) {
+	dict.entries[dict.length] = newElement
+	dict.length += 1
+}
+
+func (dict *Dictionary) GetEntry(index int) (string, error) {
+	if index >= dict.length {
+		return "", errors.New("index out of range")
+	} else {
+		return dict.entries[index], nil
+	}
+
+}
+
+func getCodes(byteList []byte) [2]uint16 {
 	/*
 		This function takes three consecutive bytes.  It
 		splits the second byte in half and concatenates
@@ -29,10 +64,10 @@ func getCodes(byteList []byte) (uint16, uint16) {
 	total -= total2
 	total /= uint32(math.Pow(2, 12))
 
-	a := uint16(total)
-	b := uint16(total2)
+	// firstCode, secondCode := getCodes(buffer)
+	codes := [2]uint16{uint16(total), uint16(total2)}
 
-	return a, b
+	return codes
 }
 
 func Decompress(encodedFile string) {
@@ -59,32 +94,44 @@ func Decompress(encodedFile string) {
 
 	// Create and fill the dictionary
 	dictionary := make([]string, 256, 4096)
+	fmt.Println(len(dictionary))
 	for i := 0; i < 256; i++ {
 		dictionary[i] = string(byte(i))
 	}
 
+	// Need to keep track of what was emitted previously
+	var lastEmitted string
+
 	for {
-		numRead, errMsg := file.Read(buffer)
+		_, errMsg := file.Read(buffer)
 		if errMsg != nil {
 			if errMsg != io.EOF {
 				fmt.Println(errMsg)
-				fmt.Println("Number of bytes read: ", numRead)
+				// fmt.Println("Number of bytes read: ", numRead)
 			}
 			// Error or end of file, so break loop
 			break
 		}
-		fmt.Println(string(buffer))
+		// fmt.Println(string(buffer))
 
 		// Extract the two codes from these three bytes
-		//TODO put this into the function
-		firstCode, secondCode := getCodes(buffer)
-		codes := [2]uint16{firstCode, secondCode}
+		codes := getCodes(buffer)
 
 		for i := 0; i < 2; i++ {
+			// For every code, we apply the rules of the LZW decoding algorithm.
+			// See https://en.wikipedia.org/wiki/Lempel–Ziv–Welch
 			if codes[i] >= uint16(len(dictionary)) {
 				// The code is not in the dictionary
+				v := lastEmitted + lastEmitted[0:1]
+				dictionary = append(dictionary, v)
+				fmt.Print(v)
 			} else {
 				// The code is in the dictionary
+				w := dictionary[codes[i]]
+				fmt.Print(w)
+				newEntry := lastEmitted + w[0:1]
+				dictionary = append(dictionary, newEntry)
+				lastEmitted = w
 			}
 		}
 
