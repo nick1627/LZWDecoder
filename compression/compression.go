@@ -23,7 +23,7 @@ func (dict *Dictionary) Clear() {
 	dict.length = 256
 }
 
-func (dict *Dictionary) initialise() {
+func (dict *Dictionary) Initialise() {
 	for i := 0; i < 256; i++ {
 		dict.entries[i] = string(byte(i))
 	}
@@ -31,6 +31,9 @@ func (dict *Dictionary) initialise() {
 }
 
 func (dict *Dictionary) AddEntry(newElement string) {
+	if dict.length == 4096 {
+		dict.Clear()
+	}
 	dict.entries[dict.length] = newElement
 	dict.length += 1
 }
@@ -71,63 +74,110 @@ func getCodes(byteList []byte) [2]uint16 {
 }
 
 func Decompress(encodedFile string) {
-	// encodedFile:		The name of the file to be decoded
-	// plaintextFile:	The resulting file will be saved with this name
+	// encodedFile:		The path of the file to be decoded
 
-	fmt.Println("starting")
+	newFilePath := encodedFile[:len(encodedFile)-2]
 
 	// Open the encoded file
 	file, errMsg := os.Open(encodedFile)
 	if errMsg != nil {
-		fmt.Println("Error opening file:")
 		fmt.Println(errMsg)
 	}
 	defer file.Close()
 
-	/*
-		Will now read out 3 bytes at a time into the bufferArray.
-		Reading in 3 bytes ensures we don't run over the end of the file
-		halfway through the buffer.
-	*/
+	newFile, errMsg := os.Create(newFilePath)
+	if errMsg != nil {
+		fmt.Println(errMsg)
+	}
+	defer newFile.Close()
 
+	// Will now read out 3 bytes at a time into the bufferArray.
 	buffer := make([]byte, 3)
 
-	// Create and fill the dictionary
+	// Create and fill the dictionary using previously defined struct
 	var dictionary Dictionary
-	dictionary.initialise()
+	dictionary.Initialise()
 
 	// Need to keep track of what was emitted previously
 	var lastEmitted string
+	var endReached bool = false
 
+	// Loop until end of file
 	for {
+		// Fill buffer with new bytes from file
 		_, errMsg := file.Read(buffer)
 		if errMsg != nil {
 			if errMsg != io.EOF {
 				fmt.Println(errMsg)
+				break
+			} else {
+				endReached = true
 			}
 			// Error or end of file, so break loop
 			break
 		}
-		// fmt.Println(string(buffer))
+
+		// Deal with EOF edge cases
+		var startPoint int = 0
+		if endReached {
+			// Either all bytes in the buffer are zero,
+			// or only the last one is zero, because
+			// the file must have an even number of
+			// bytes.
+			if buffer[0] == 0 {
+				// have reached end of file
+				break
+			} else {
+				// Third byte is zero.  Special treatment
+				// required to allow the code to be
+				// extracted from the first two bytes
+				// properly.
+				if buffer[1] == 0 && buffer[2] == 0 {
+					fmt.Println("Something's broken")
+				}
+				buffer[2] = buffer[1]
+				buffer[1] = buffer[0]
+				buffer[0] = 0
+
+				// First code contains no data, so set startPoint
+				// to 1 so that it is skipped over
+				startPoint = 1
+			}
+		}
 
 		// Extract the two codes from these three bytes
 		codes := getCodes(buffer)
-		for i := 0; i < 2; i++ {
+		for i := startPoint; i < 2; i++ {
 			// For every code, we apply the rules of the LZW decoding algorithm.
 			// See https://en.wikipedia.org/wiki/Lempel–Ziv–Welch
 			if codes[i] >= dictionary.GetLength() {
-				// The code is not in the dictionaryß
+				// The code is not in the dictionary
 				v := lastEmitted + lastEmitted[0:1]
 				dictionary.AddEntry(v)
-				fmt.Print(v)
+
+				_, errMsg = newFile.WriteString(v)
+				if errMsg != nil {
+					fmt.Println(errMsg)
+				}
+
+				lastEmitted = v
 			} else {
 				// The code is in the dictionary
 				w, _ := dictionary.GetEntry(codes[i])
-				fmt.Print(w)
-				newEntry := lastEmitted + w[0:1]
-				dictionary.AddEntry(newEntry)
+
+				_, errMsg = newFile.WriteString(w)
+				if errMsg != nil {
+					fmt.Println(errMsg)
+				}
+
+				if lastEmitted != "" {
+					newEntry := lastEmitted + w[0:1]
+					dictionary.AddEntry(newEntry)
+				}
+
 				lastEmitted = w
 			}
 		}
+
 	}
 }
