@@ -24,9 +24,8 @@ func (dict *Dictionary) Clear() {
 }
 
 func (dict *Dictionary) Initialise() {
-	var i uint16
-	for i = 0; i < 256; i++ {
-		dict.entries[i] = []byte{uint8(i)}
+	for i := 0; i < 256; i++ {
+		dict.entries[i] = []byte{byte(i)}
 	}
 	dict.length = 256
 }
@@ -104,10 +103,13 @@ func Decompress(encodedFile string) {
 	var lastEmitted []byte
 	var endReached bool = false
 
+	var w []byte
+	var v []byte
+
 	// Loop until end of file
 	for {
 		// Fill buffer with new bytes from file
-		_, errMsg := file.Read(buffer)
+		_, errMsg = file.Read(buffer)
 		if errMsg != nil {
 			if errMsg != io.EOF {
 				fmt.Println(errMsg)
@@ -154,9 +156,10 @@ func Decompress(encodedFile string) {
 			// See https://en.wikipedia.org/wiki/Lempel–Ziv–Welch
 			if codes[i] >= dictionary.GetLength() {
 				// The code is not in the dictionary
-				v := append(lastEmitted, lastEmitted[0])
+				v = append(lastEmitted, lastEmitted[0])
+				// fmt.Println(string(v))
 				dictionary.AddEntry(v)
-				fmt.Println(string(v))
+				// fmt.Println(string(v))
 
 				_, errMsg = newFile.Write(v)
 				if errMsg != nil {
@@ -166,7 +169,10 @@ func Decompress(encodedFile string) {
 				lastEmitted = v
 			} else {
 				// The code is in the dictionary
-				w, _ := dictionary.GetEntry(codes[i])
+				w, errMsg = dictionary.GetEntry(codes[i])
+				if errMsg != nil {
+					fmt.Println(errMsg)
+				}
 
 				_, errMsg = newFile.Write(w)
 				if errMsg != nil {
@@ -175,12 +181,13 @@ func Decompress(encodedFile string) {
 
 				if len(lastEmitted) != 0 {
 					newEntry := append(lastEmitted, w[0])
+					// fmt.Println(string(newEntry))
 					dictionary.AddEntry(newEntry)
-					fmt.Println(string(newEntry))
 				}
 
 				lastEmitted = w
 			}
+			fmt.Println(lastEmitted)
 		}
 	}
 }
