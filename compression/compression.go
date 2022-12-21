@@ -4,50 +4,44 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
+
+	// "math"
 	"os"
+	// "bytes"
 )
 
-type dictionary struct {
-	// Stores the bytes associated with each code as they
-	// are discovered.
+type Dictionary struct {
 	length  uint16
-	entries [4096][]byte
+	entries [4096]string
 }
 
-func (dict *dictionary) getLength() uint16 {
-	// Get length of dictionary
+func (dict *Dictionary) GetLength() uint16 {
 	return dict.length
 }
 
-func (dict *dictionary) clear() {
-	// Just have to reset the length.  Everything
-	// beyond the new length will be overwritten.
+func (dict *Dictionary) Clear() {
+	// Just have to reset the length
 	dict.length = 256
 }
 
-func (dict *dictionary) initialise() {
-	// Fill dictionary with initial values (ASCII
-	// codes 0-255)
+func (dict *Dictionary) Initialise() {
 	for i := 0; i < 256; i++ {
-		dict.entries[i] = []byte{byte(i)}
+		dict.entries[i] = string(byte(i))
 	}
 	dict.length = 256
 }
 
-func (dict *dictionary) addEntry(newElement []byte) {
-	// Add entry to dictionary
+func (dict *Dictionary) AddEntry(newElement string) {
 	if dict.length == 4096 {
-		dict.clear()
+		dict.Clear()
 	}
 	dict.entries[dict.length] = newElement
 	dict.length += 1
 }
 
-func (dict *dictionary) getEntry(index uint16) ([]byte, error) {
-	// Get a dictionary entry by index
+func (dict *Dictionary) GetEntry(index uint16) (string, error) {
 	if index >= dict.length {
-		return []byte{}, errors.New("index out of range of dictionary")
+		return "", errors.New("index out of range")
 	} else {
 		return dict.entries[index], nil
 	}
@@ -55,37 +49,58 @@ func (dict *dictionary) getEntry(index uint16) ([]byte, error) {
 
 func getCodes(byteList []byte) [2]uint16 {
 	/*
-		This function takes three consecutive bytes.  It
-		splits the second byte in half and concatenates
-		left and right such that there are now two lots
+		This function takes three consecutive bytes in
+		byteList.  It splits the second byte in half and
+		concatenates left and right such that there are now two lots
 		of 12 bits, treated as numbers.  These numbers
 		are returned as two integers in an array.
-
-		TODO: Is there a better way using splitting
-		and concatenation of the bits?
 	*/
 
-	var total uint32
-	total += uint32(byteList[2])
-	total += (uint32(byteList[1]) * uint32(math.Pow(2, 8)))
-	total += (uint32(byteList[0]) * uint32(math.Pow(2, 16)))
+	firstSection := uint16(clearNibble(byteList[1], false))
+	secondSection := uint16(clearNibble(byteList[1], true))
 
-	total2 := total % uint32(math.Pow(2, 12))
-	total -= total2
-	total /= uint32(math.Pow(2, 12))
+	firstSection = firstSection >> 4
+	secondSection = secondSection << 8
 
-	codes := [2]uint16{uint16(total), uint16(total2)}
+	firstCode := uint16(byteList[0])
+	firstCode = firstCode << 4
+	firstCode += firstSection
 
-	return codes
+	secondCode := secondSection
+	secondCode += uint16(byteList[2])
+
+	return [2]uint16{firstCode, secondCode}
+}
+
+func clearNibble(x byte, firstNibble bool) byte {
+	// clears either the first or second nibble of a byte
+	// firstNibble true: clears first nibble
+	// firstNibble false: clears second nibble
+	if firstNibble {
+		x = clearBit(x, 4)
+		x = clearBit(x, 5)
+		x = clearBit(x, 6)
+		x = clearBit(x, 7)
+	} else {
+		x = clearBit(x, 0)
+		x = clearBit(x, 1)
+		x = clearBit(x, 2)
+		x = clearBit(x, 3)
+	}
+	return x
+}
+
+func clearBit(x byte, n byte) byte {
+	// clear nth bit of given byte x
+	mask := ^(byte(1) << n)
+	x &= mask
+	return x
 }
 
 func Decompress(encodedFile string) {
-	/*
-		This function decompresses files encoded with the
-		LZW algorithm ending in .z
+	// encodedFile:		The path of the file to be decoded
 
-		encodedFile:		The path of the file to be decoded
-	*/
+	newFilePath := encodedFile[:len(encodedFile)-2]
 
 	// Open the encoded file
 	file, errMsg := os.Open(encodedFile)
@@ -94,34 +109,27 @@ func Decompress(encodedFile string) {
 	}
 	defer file.Close()
 
-	// Create new file in which to write the decoded version
-	// Remove .z from given filename
-	newFilePath := encodedFile[:len(encodedFile)-2]
 	newFile, errMsg := os.Create(newFilePath)
 	if errMsg != nil {
 		fmt.Println(errMsg)
 	}
 	defer newFile.Close()
 
-	// Will read out 3 bytes at a time into the input buffer.
+	// Will now read out 3 bytes at a time into the bufferArray.
 	buffer := make([]byte, 3)
 
 	// Create and fill the dictionary using previously defined struct
-	var dictionary dictionary
-	dictionary.initialise()
+	var dictionary Dictionary
+	dictionary.Initialise()
 
 	// Need to keep track of what was emitted previously
-	var lastEmitted []byte
+	var lastEmitted string
 	var endReached bool = false
 
-	var w []byte
-	var v []byte
-
 	// Loop until end of file
-	var counter int = 0
 	for {
 		// Fill buffer with new bytes from file
-		_, errMsg = file.Read(buffer)
+		_, errMsg := file.Read(buffer)
 		if errMsg != nil {
 			if errMsg != io.EOF {
 				fmt.Println(errMsg)
@@ -164,19 +172,14 @@ func Decompress(encodedFile string) {
 		// Extract the two codes from these three bytes
 		codes := getCodes(buffer)
 		for i := startPoint; i < 2; i++ {
-			if counter >= 48 {
-				fmt.Println("wait")
-			}
 			// For every code, we apply the rules of the LZW decoding algorithm.
 			// See https://en.wikipedia.org/wiki/Lempel–Ziv–Welch
-			if codes[i] >= dictionary.getLength() {
+			if codes[i] >= dictionary.GetLength() {
 				// The code is not in the dictionary
-				v = append(lastEmitted, lastEmitted[0])
+				v := lastEmitted + lastEmitted[0:1]
+				dictionary.AddEntry(v)
 
-				dictionary.addEntry(v)
-
-				// Emit v
-				_, errMsg = newFile.Write(v)
+				_, errMsg = newFile.WriteString(v)
 				if errMsg != nil {
 					fmt.Println(errMsg)
 				}
@@ -184,26 +187,21 @@ func Decompress(encodedFile string) {
 				lastEmitted = v
 			} else {
 				// The code is in the dictionary
-				w, errMsg = dictionary.getEntry(codes[i])
+				w, _ := dictionary.GetEntry(codes[i])
+
+				_, errMsg = newFile.WriteString(w)
 				if errMsg != nil {
 					fmt.Println(errMsg)
 				}
 
-				// Emit w
-				_, errMsg = newFile.Write(w)
-				if errMsg != nil {
-					fmt.Println(errMsg)
-				}
-
-				if len(lastEmitted) != 0 {
-					// If there was a previous output, we
-					// need to create a new dictionary entry
-					newEntry := append(lastEmitted, w[0])
-					dictionary.addEntry(newEntry)
+				if lastEmitted != "" {
+					newEntry := lastEmitted + w[0:1]
+					dictionary.AddEntry(newEntry)
 				}
 
 				lastEmitted = w
 			}
 		}
+
 	}
 }
